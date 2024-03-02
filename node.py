@@ -1,10 +1,12 @@
 import argparse
+import logging
 import tomllib
 from pathlib import Path
 
-import loguru
+from sched import Scheduler
+from utils.log import fmt_logger
 
-logger = loguru.logger
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path):
@@ -24,7 +26,14 @@ def main():
     parser.add_argument("--config", "-c", type=str, help="config file path", required=True)
     args = parser.parse_args()
     cfg = load_config(args.config)
-    logger.debug(cfg)
+
+    log_level = cfg.get("log", {}).get("level", "DEBUG").upper()
+    fmt_logger(log_level)
+
+    gost_endpoint = cfg.get("gost", {}).get("endpoint", "")
+    panel_endpoint = cfg.get("panel", {}).get("endpoint", "")
+    scheduler = Scheduler(gost_endpoint, panel_endpoint)
+    scheduler.start()
 
 
 if __name__ == "__main__":
