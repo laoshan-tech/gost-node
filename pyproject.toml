@@ -1,0 +1,18 @@
+[project]
+name = "gost-node"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "古月", email = "laoshan-tech@yandex.com"},
+]
+dependencies = [
+    "loguru>=0.7.2",
+    "apscheduler>=3.10.4",
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "AGPL"}
+
+
+[tool.pdm]
+distribution = false
