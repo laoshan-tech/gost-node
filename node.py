@@ -1,8 +1,13 @@
 import argparse
 import logging
 import tomllib
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import uvicorn
+from fastapi import FastAPI
+
+from routers import index
 from sched import Scheduler
 from utils.log import fmt_logger
 
@@ -21,7 +26,24 @@ def load_config(config_path):
     return config
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # start scheduler with fastapi
+    await scheduler.start()
+    yield
+    # stop scheduler
+    await scheduler.stop()
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(index.router, prefix="")
+
+
 def main():
+    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", "-c", type=str, help="config file path", required=True)
     args = parser.parse_args()
@@ -33,8 +55,5 @@ def main():
     gost_endpoint = cfg.get("gost", {}).get("endpoint", "")
     panel_endpoint = cfg.get("panel", {}).get("endpoint", "")
     scheduler = Scheduler(gost_endpoint, panel_endpoint)
-    scheduler.start()
 
-
-if __name__ == "__main__":
     main()

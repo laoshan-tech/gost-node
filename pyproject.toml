@@ -6,8 +6,10 @@ authors = [
     {name = "古月", email = "laoshan-tech@yandex.com"},
 ]
 dependencies = [
-    "apscheduler>=4.0.0a4",
     "httpx>=0.27.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.1",
+    "apscheduler>=3.10.4",
 ]
 requires-python = ">=3.11"
 readme = "README.md"

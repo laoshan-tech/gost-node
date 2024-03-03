@@ -1,38 +1,33 @@
-import asyncio
-import datetime
 import logging
 
-from apscheduler import AsyncScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from service import gost as gost_service
+from services import gost as gost_service
 
 logger = logging.getLogger(__name__)
 
 
 class Scheduler(object):
     def __init__(self, gost_endpoint: str, panel_endpoint: str) -> None:
-        self.scheduler = AsyncScheduler()
+        # jobstores = {"default": SQLAlchemyJobStore(url="sqlite:///jobs.sqlite")}
+        self.scheduler = AsyncIOScheduler()
         self.gost_endpoint = gost_endpoint
         self.panel_endpoint = panel_endpoint
 
-    async def _add_schedules(self):
-        await self.scheduler.add_schedule(
-            func_or_task_id=gost_service.fetch_all_config,
-            trigger=IntervalTrigger(seconds=20, start_time=datetime.datetime.now()),
+    def _add_schedules(self):
+        self.scheduler.add_job(
+            func=gost_service.fetch_all_config,
+            trigger="interval",
+            seconds=20,
             kwargs={"endpoint": self.gost_endpoint},
         )
 
-    async def run_scheduler(self):
-        async with self.scheduler:
-            await self._add_schedules()
+    def run_scheduler(self):
+        self._add_schedules()
+        self.scheduler.start()
 
-        await self.scheduler.run_until_stopped()
+    async def start(self):
+        self.run_scheduler()
 
-    def start(self):
-        try:
-            asyncio.run(self.run_scheduler())
-        except KeyboardInterrupt:
-            asyncio.run(self.scheduler.stop())
-        finally:
-            logger.warning("scheduler shut down")
+    async def stop(self):
+        self.scheduler.shutdown()
