@@ -7,7 +7,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from routers import index
+from routers import index, observer
 from sched import Scheduler
 from utils.log import fmt_logger
 
@@ -27,8 +27,10 @@ def load_config(config_path):
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(web_app: FastAPI):
     # start scheduler with fastapi
+    web_app.include_router(index.router, prefix="")
+    web_app.include_router(observer.router, prefix="/observer")
     await scheduler.start()
     yield
     # stop scheduler
@@ -36,11 +38,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.include_router(index.router, prefix="")
 
 
 def main():
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=uvicorn_log_cfg)
 
 
 if __name__ == "__main__":
@@ -50,7 +51,7 @@ if __name__ == "__main__":
     cfg = load_config(args.config)
 
     log_level = cfg.get("log", {}).get("level", "DEBUG").upper()
-    fmt_logger(log_level)
+    uvicorn_log_cfg = fmt_logger(log_level)
 
     gost_endpoint = cfg.get("gost", {}).get("endpoint", "")
     panel_endpoint = cfg.get("panel", {}).get("endpoint", "")

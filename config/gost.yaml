@@ -1,0 +1,8 @@
+api:
+  addr: 127.0.0.1:18080
+
+observers:
+  - name: node-observer
+    plugin:
+      type: http
+      addr: http://127.0.0.1:8000/observer
