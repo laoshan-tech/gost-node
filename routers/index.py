@@ -1,8 +1,14 @@
 from fastapi import APIRouter
 
+from . import RespModel
+
 router = APIRouter()
 
 
 @router.get("/")
-def index():
-    return {"success": True, "msg": "Hello World"}
+async def index() -> RespModel:
+    """
+    Index.
+    :return:
+    """
+    return RespModel(success=True, message="Hello World!")

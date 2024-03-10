@@ -1,0 +1,2 @@
+class GOSTApiException(Exception):
+    pass

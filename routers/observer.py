@@ -1,9 +1,13 @@
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from . import RespModel
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class EventStatsModel(BaseModel):
@@ -33,5 +37,13 @@ class ObserveModel(BaseModel):
 
 
 @router.post("")
-def index(events: ObserveModel):
-    return {"success": True, "msg": "Hello World"}
+async def observer(request: ObserveModel) -> RespModel:
+    """
+    Observer for GOST.
+    :param request:
+    :return:
+    """
+    for e in request.events:
+        logger.info(e)
+
+    return RespModel(success=True, message="Hello World!")
