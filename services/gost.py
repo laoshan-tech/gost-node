@@ -48,21 +48,20 @@ async def fetch_all_config(endpoint: str):
         raise GOSTApiException(f"fetch all config error: {msg}")
 
 
-async def update_ws_chain(endpoint: str, name: str, addrs: List[str]) -> bool:
+async def update_ws_chain(endpoint: str, name: str, relay: str) -> bool:
     data = {
         "hops": [
             {
-                "name": f"{name}-hop-{index}",
+                "name": f"{name}-hop",
                 "nodes": [
                     {
-                        "name": f"{name}-node-{index}",
-                        "addr": addr,
+                        "name": f"{name}-relay-node",
+                        "addr": relay,
                         "connector": {"type": "relay"},
                         "dialer": {"type": "ws"},
                     }
                 ],
             }
-            for index, addr in enumerate(addrs)
         ],
     }
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/chains/{name}", method="put", data=data)
@@ -73,40 +72,42 @@ async def update_ws_chain(endpoint: str, name: str, addrs: List[str]) -> bool:
         return False
 
 
-async def add_ws_chain(endpoint: str, name: str, addrs: List[str]) -> bool:
+async def add_ws_chain(endpoint: str, name: str, relay: str) -> bool:
     data = {
         "name": name,
         "hops": [
             {
-                "name": f"{name}-hop-{index}",
+                "name": f"{name}-hop",
                 "nodes": [
                     {
-                        "name": f"{name}-node-{index}",
-                        "addr": addr,
+                        "name": f"{name}-relay-node",
+                        "addr": relay,
                         "connector": {"type": "relay"},
                         "dialer": {"type": "ws"},
                     }
                 ],
             }
-            for index, addr in enumerate(addrs)
         ],
     }
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/chains", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_ws_chain(endpoint=endpoint, name=name, addrs=addrs)
+        return await update_ws_chain(endpoint=endpoint, name=name, relay=relay)
     else:
         logger.error(f"add ws chain error: {msg}")
         return False
 
 
-async def update_ws_ingress_service(endpoint: str, name: str, addr: str) -> bool:
+async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
     chain_name = f"{name}-chain"
     data = {
         "addr": addr,
         "handler": {"type": "tcp", "chain": chain_name},
         "listener": {"type": "tcp"},
+        "forwarder": {
+            "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
+        },
     }
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
@@ -116,33 +117,33 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str) -> bool
         return False
 
 
-async def add_ws_ingress_service(endpoint: str, name: str, addr: str, targets: List[str]):
+async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str, targets: List[str]):
     chain_name = f"{name}-chain"
-    await add_ws_chain(endpoint=endpoint, name=chain_name, addrs=targets)
+    await add_ws_chain(endpoint=endpoint, name=chain_name, relay=relay)
     data = {
         "name": name,
         "addr": addr,
         "handler": {"type": "tcp", "chain": chain_name},
         "listener": {"type": "tcp"},
+        "forwarder": {
+            "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
+        },
     }
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif "object duplicated" == msg:
-        return await update_ws_ingress_service(endpoint=endpoint, name=name, addr=addr)
+        return await update_ws_ingress_service(endpoint=endpoint, name=name, addr=addr, targets=targets)
     else:
         logger.error(f"add ws ingress service error: {msg}")
         return False
 
 
-async def update_ws_egress_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+async def update_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
     data = {
         "addr": addr,
         "handler": {"type": "relay"},
         "listener": {"type": "ws"},
-        "forwarder": {
-            "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
-        },
     }
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
@@ -152,21 +153,18 @@ async def update_ws_egress_service(endpoint: str, name: str, addr: str, targets:
         return False
 
 
-async def add_ws_egress_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+async def add_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
     data = {
         "name": name,
         "addr": addr,
         "handler": {"type": "relay"},
         "listener": {"type": "ws"},
-        "forwarder": {
-            "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
-        },
     }
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif "object duplicated" == msg:
-        return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr, targets=targets)
+        return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr)
     else:
         logger.error(f"add ws egress service error: {msg}")
         return False
