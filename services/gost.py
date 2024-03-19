@@ -41,8 +41,8 @@ async def gost_req(endpoint: str, url: str, method: str, data: dict = None) -> T
 
 
 async def fetch_all_config(endpoint: str):
-    success, msg, result = await gost_req(endpoint=endpoint, url="", method="get")
-    if success and msg == "OK":
+    success, msg, result = await gost_req(endpoint=endpoint, url="/config", method="get")
+    if success:
         return result
     else:
         raise GOSTApiException(f"fetch all config error: {msg}")
@@ -108,6 +108,7 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets
         "forwarder": {
             "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
         },
+        "observer": "node-observer",
     }
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
@@ -128,6 +129,7 @@ async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str
         "forwarder": {
             "nodes": [{"name": f"{name}-target-{index}", "addr": target}] for index, target in enumerate(targets)
         },
+        "observer": "node-observer",
     }
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
@@ -144,6 +146,7 @@ async def update_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
         "addr": addr,
         "handler": {"type": "relay"},
         "listener": {"type": "ws"},
+        "observer": "node-observer",
     }
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
@@ -159,6 +162,7 @@ async def add_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
         "addr": addr,
         "handler": {"type": "relay"},
         "listener": {"type": "ws"},
+        "observer": "node-observer",
     }
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
