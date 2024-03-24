@@ -40,7 +40,7 @@ async def gost_req(endpoint: str, url: str, method: str, data: dict = None) -> T
         return response.status_code == 200, msg, result
 
 
-async def fetch_all_config(endpoint: str):
+async def fetch_all_config(endpoint: str) -> dict:
     success, msg, result = await gost_req(endpoint=endpoint, url="/config", method="get")
     if success:
         return result

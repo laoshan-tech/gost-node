@@ -1,0 +1,2 @@
+class TYZApiException(Exception):
+    pass

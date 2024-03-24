@@ -1,25 +1,35 @@
+import datetime
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from services import gost as gost_service
+from services import tyz as tyz_service
 
 logger = logging.getLogger(__name__)
 
 
 class Scheduler(object):
-    def __init__(self, gost_endpoint: str, panel_endpoint: str) -> None:
+    def __init__(self, gost_endpoint: str, mng_endpoint: str, tyz_endpoint: str, node_id: int, token: str) -> None:
         # jobstores = {"default": SQLAlchemyJobStore(url="sqlite:///jobs.sqlite")}
         self.scheduler = AsyncIOScheduler()
         self.gost_endpoint = gost_endpoint
-        self.panel_endpoint = panel_endpoint
+        self.panel_endpoint = mng_endpoint
+        self.tyz_endpoint = tyz_endpoint
+        self.node_id = node_id
+        self.token = token
 
     def _add_schedules(self):
         self.scheduler.add_job(
-            func=gost_service.fetch_all_config,
+            func=tyz_service.sync_relay_rules,
             trigger="interval",
             seconds=20,
-            kwargs={"endpoint": self.gost_endpoint},
+            next_run_time=datetime.datetime.now(),
+            kwargs={
+                "endpoint": self.tyz_endpoint,
+                "node_id": self.node_id,
+                "token": self.token,
+                "gost": self.gost_endpoint,
+            },
         )
 
     def run_scheduler(self):

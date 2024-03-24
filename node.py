@@ -3,6 +3,7 @@ import logging
 import tomllib
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI
@@ -41,7 +42,13 @@ app = FastAPI(lifespan=lifespan)
 
 
 def main():
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=uvicorn_log_cfg)
+    p = urlparse(mng_endpoint)
+    uvicorn.run(
+        app,
+        host=p.hostname,
+        port=p.port or 80,
+        log_config=uvicorn_log_cfg,
+    )
 
 
 if __name__ == "__main__":
@@ -54,7 +61,10 @@ if __name__ == "__main__":
     uvicorn_log_cfg = fmt_logger(log_level)
 
     gost_endpoint = cfg.get("gost", {}).get("endpoint", "")
-    panel_endpoint = cfg.get("panel", {}).get("endpoint", "")
-    scheduler = Scheduler(gost_endpoint, panel_endpoint)
+    mng_endpoint = cfg.get("mng", {}).get("endpoint", "")
+    tyz_endpoint = cfg.get("tyz", {}).get("endpoint", "")
+    node_id = cfg.get("tyz", {}).get("node_id", 0)
+    token = cfg.get("tyz", {}).get("token", "")
+    scheduler = Scheduler(gost_endpoint, mng_endpoint, tyz_endpoint, node_id, token)
 
     main()
