@@ -9,7 +9,7 @@ import httpx
 
 from exceptions.tyz import TYZApiException
 from utils import consts
-from utils.gost import extract_key_from_dict_list, collect_key_from_dict_list
+from utils.gost import extract_key_from_dict_list, collect_key_from_dict_list, GOSTAuth
 from .gost import (
     fetch_all_config,
     add_ws_egress_service,
@@ -166,6 +166,7 @@ async def sync_ingress_rule(rule: dict, gost: str, service_map: dict, chain_map:
         addr=f":{rule.get('listen_port')}",
         relay=rule.get("tunnel", {}).get("addr", ""),
         targets=rule.get("targets").split("\n"),
+        auth=GOSTAuth(username=rule.get("tunnel", {}).get("username"), password=rule.get("tunnel", {}).get("password")),
     )
     if add_ok:
         logger.info(f"ingress rule {service_name} added success")
@@ -203,7 +204,13 @@ async def sync_egress_rule(rule: dict, gost: str, service_map: dict, ctx: PanelC
             return True
 
     logger.info(f"creating or updating service {service_name}")
-    add_ok = await add_ws_egress_service(endpoint=gost, name=service_name, addr=f":{rule.get('listen_port')}")
+
+    add_ok = await add_ws_egress_service(
+        endpoint=gost,
+        name=service_name,
+        addr=f":{rule.get('listen_port')}",
+        auth=GOSTAuth(username=rule.get("tunnel", {}).get("username"), password=rule.get("tunnel", {}).get("password")),
+    )
     if add_ok:
         logger.info(f"egress rule {service_name} added success")
         await report_rule_status(

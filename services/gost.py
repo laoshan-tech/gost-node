@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import httpx
 
 from exceptions.gost import GOSTApiException
+from utils.gost import GOSTAuth
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ async def del_chain(endpoint: str, name: str):
     await gost_req(endpoint=endpoint, url=f"/config/chains/{name}", method="DELETE")
 
 
-async def update_ws_chain(endpoint: str, name: str, relay: str) -> bool:
+async def update_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> bool:
     data = {
         "hops": [
             {
@@ -77,7 +78,7 @@ async def update_ws_chain(endpoint: str, name: str, relay: str) -> bool:
                     {
                         "name": f"{name}-relay-node",
                         "addr": relay,
-                        "connector": {"type": "relay"},
+                        "connector": {"type": "relay", "auth": {"username": auth.username, "password": auth.password}},
                         "dialer": {"type": "ws"},
                     }
                 ],
@@ -92,7 +93,7 @@ async def update_ws_chain(endpoint: str, name: str, relay: str) -> bool:
         return False
 
 
-async def add_ws_chain(endpoint: str, name: str, relay: str) -> bool:
+async def add_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> bool:
     data = {
         "name": name,
         "hops": [
@@ -102,7 +103,7 @@ async def add_ws_chain(endpoint: str, name: str, relay: str) -> bool:
                     {
                         "name": f"{name}-relay-node",
                         "addr": relay,
-                        "connector": {"type": "relay"},
+                        "connector": {"type": "relay", "auth": {"username": auth.username, "password": auth.password}},
                         "dialer": {"type": "ws"},
                     }
                 ],
@@ -113,7 +114,7 @@ async def add_ws_chain(endpoint: str, name: str, relay: str) -> bool:
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_ws_chain(endpoint=endpoint, name=name, relay=relay)
+        return await update_ws_chain(endpoint=endpoint, name=name, relay=relay, auth=auth)
     else:
         logger.error(f"add ws chain error: {msg}")
         return False
@@ -138,7 +139,7 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets
         return False
 
 
-async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str, targets: List[str]):
+async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str, targets: List[str], auth: GOSTAuth):
     """
 
     :param endpoint: gost endpoint
@@ -146,10 +147,11 @@ async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str
     :param addr: listen address
     :param relay: relay address
     :param targets: relay targets
+    :param auth:
     :return:
     """
     chain_name = f"{name}-chain"
-    await add_ws_chain(endpoint=endpoint, name=chain_name, relay=relay)
+    await add_ws_chain(endpoint=endpoint, name=chain_name, relay=relay, auth=auth)
     data = {
         "name": name,
         "addr": addr,
@@ -170,10 +172,10 @@ async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str
         return False
 
 
-async def update_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
+async def update_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTAuth) -> bool:
     data = {
         "addr": addr,
-        "handler": {"type": "relay"},
+        "handler": {"type": "relay", "auth": {"username": auth.username, "password": auth.password}},
         "listener": {"type": "ws"},
         "observer": "node-observer",
     }
@@ -185,11 +187,11 @@ async def update_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
         return False
 
 
-async def add_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
+async def add_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTAuth) -> bool:
     data = {
         "name": name,
         "addr": addr,
-        "handler": {"type": "relay"},
+        "handler": {"type": "relay", "auth": {"username": auth.username, "password": auth.password}},
         "listener": {"type": "ws"},
         "observer": "node-observer",
     }
@@ -197,7 +199,7 @@ async def add_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
     if success and msg == "OK":
         return True
     elif "object duplicated" == msg:
-        return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr)
+        return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr, auth=auth)
     else:
         logger.error(f"add ws egress service error: {msg}")
         return False

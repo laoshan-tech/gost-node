@@ -1,3 +1,12 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class GOSTAuth:
+    username: str
+    password: str
+
+
 def extract_key_from_dict_list(_list: list, key: str) -> dict:
     """
     Extract specific key from a list of dict.
