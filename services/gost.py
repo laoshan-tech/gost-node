@@ -48,6 +48,26 @@ async def fetch_all_config(endpoint: str) -> dict:
         raise GOSTApiException(f"fetch all config error: {msg}")
 
 
+async def del_service(endpoint: str, name: str):
+    """
+    Delete service.
+    :param endpoint:
+    :param name:
+    :return:
+    """
+    await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="DELETE")
+
+
+async def del_chain(endpoint: str, name: str):
+    """
+    Delete chain.
+    :param endpoint:
+    :param name:
+    :return:
+    """
+    await gost_req(endpoint=endpoint, url=f"/config/chains/{name}", method="DELETE")
+
+
 async def update_ws_chain(endpoint: str, name: str, relay: str) -> bool:
     data = {
         "hops": [
@@ -119,6 +139,15 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets
 
 
 async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str, targets: List[str]):
+    """
+
+    :param endpoint: gost endpoint
+    :param name: service name
+    :param addr: listen address
+    :param relay: relay address
+    :param targets: relay targets
+    :return:
+    """
     chain_name = f"{name}-chain"
     await add_ws_chain(endpoint=endpoint, name=chain_name, relay=relay)
     data = {
@@ -171,4 +200,37 @@ async def add_ws_egress_service(endpoint: str, name: str, addr: str) -> bool:
         return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr)
     else:
         logger.error(f"add ws egress service error: {msg}")
+        return False
+
+
+async def update_raw_redir_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+    data = {
+        "addr": addr,
+        "handler": {"type": "tcp"},
+        "listener": {"type": "tcp"},
+        "forwarder": {"nodes": [{"name": f"{name}-node-{index}", "addr": t} for index, t in enumerate(targets)]},
+    }
+    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
+    if success and msg == "OK":
+        return True
+    else:
+        logger.error(f"update raw redirect service error: {msg}")
+        return False
+
+
+async def add_raw_redir_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+    data = {
+        "name": name,
+        "addr": addr,
+        "handler": {"type": "tcp"},
+        "listener": {"type": "tcp"},
+        "forwarder": {"nodes": [{"name": f"{name}-node-{index}", "addr": t} for index, t in enumerate(targets)]},
+    }
+    success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
+    if success and msg == "OK":
+        return True
+    elif msg == "object duplicated":
+        return await update_raw_redir_service(endpoint=endpoint, name=name, addr=addr, targets=targets)
+    else:
+        logger.error(f"add raw redirect service error: {msg}")
         return False
