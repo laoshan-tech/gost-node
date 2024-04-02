@@ -6,12 +6,29 @@ services:
     user: "root"
     volumes:
       - "./prom/:/etc/prometheus/"
-      - "./data/prom/:/prometheus"
+      - "./data/prom/:/prometheus/"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention=30d"
     ports:
       - "19090:9090"
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+  grafana:
+    image: "grafana/grafana"
+    restart: "on-failure"
+    network_mode: "bridge"
+    user: "root"
+    volumes:
+      - "./data/grafana/:/var/lib/grafana/"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=7a6bdd30e41662b0a747f64949425f4e
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "13000:3000"
     logging:
       options:
         max-size: "1m"
