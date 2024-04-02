@@ -1,0 +1,6 @@
+api:
+  addr: :18080
+
+metrics:
+  addr: :19000
+  path: /metrics

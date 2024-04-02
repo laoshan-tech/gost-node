@@ -3,9 +3,6 @@ global:
 
 scrape_configs:
   - job_name: prometheus
-    basic_auth:
-      username: "admin"
-      password: "4c95637bc9033f6b3c402034b2e0705f"
     static_configs:
       - targets: [ 'localhost:9090' ]
         labels:
@@ -13,6 +10,6 @@ scrape_configs:
 
   - job_name: gost
     static_configs:
-      - targets: [ 'gost:19000' ]
+      - targets: [ '172.17.0.1:19000' ]
         labels:
           instance: gost
