@@ -1,0 +1,32 @@
+services:
+  prom:
+    image: "prom/prometheus"
+    restart: "on-failure"
+    network_mode: "bridge"
+    user: "root"
+    volumes:
+      - "./prom/:/etc/prometheus/"
+      - "./data/prom/:/prometheus"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.config.file=/etc/prometheus/web.config.yml"
+      - "--storage.tsdb.retention=30d"
+    ports:
+      - "19090:9090"
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+  gost:
+    image: "gogost/gost"
+    restart: "always"
+    network_mode: "host"
+    volumes:
+      - "./gost/gost.yml:/etc/gost/gost.yml"
+    command:
+      - "-C /etc/gost/gost.yml"
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "3"

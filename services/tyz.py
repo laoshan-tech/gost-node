@@ -9,12 +9,20 @@ import httpx
 
 from exceptions.tyz import TYZApiException
 from utils import consts
-from utils.gost import extract_key_from_dict_list, collect_key_from_dict_list, GOSTAuth
+from utils.gost import (
+    extract_key_from_dict_list,
+    collect_key_from_dict_list,
+    GOSTAuth,
+    parse_gost_limits,
+    RelayRuleLimit,
+)
 from .gost import (
     fetch_all_config,
     add_ws_egress_service,
     add_ws_ingress_service,
     add_raw_redir_service,
+    add_conn_limiter,
+    add_speed_limiter,
     del_service,
     del_chain,
 )
@@ -37,6 +45,16 @@ def gen_service_name(rule_id: int, rule_type: str, node_id: int) -> str:
     :return:
     """
     return f"rule-{rule_id}-{rule_type.lower()}-node-{node_id}"
+
+
+def gen_limiter_name(service: str, type: str) -> str:
+    """
+    Generate limiter name.
+    :param service:
+    :param type:
+    :return:
+    """
+    return f"{service}-{type}-limiter"
 
 
 async def tyz_req(
@@ -81,6 +99,25 @@ async def report_rule_status(endpoint: str, node_id: int, token: str, rule_id: i
     )
 
 
+async def add_or_update_limiters(endpoint: str, service_name: str, limit: RelayRuleLimit):
+    """
+    Add or update limiters.
+    :param endpoint: gost endpoint
+    :param service_name:
+    :param limit:
+    :return:
+    """
+    if limit:
+        add_speed_limit_ok = await add_speed_limiter(
+            endpoint=endpoint, name=gen_limiter_name(service=service_name, type="speed"), values=limit.speed_limits
+        )
+        add_conn_limit_ok = await add_conn_limiter(
+            endpoint=endpoint, name=gen_limiter_name(service=service_name, type="conn"), values=limit.conn_limits
+        )
+        if add_speed_limit_ok and add_conn_limit_ok:
+            logger.info(f"create speed and conn limiter success")
+
+
 async def sync_relay_rules(endpoint: str, node_id: int, token: str, gost: str):
     """
     Sync relay rules.
@@ -101,6 +138,7 @@ async def sync_relay_rules(endpoint: str, node_id: int, token: str, gost: str):
         new_service_names = []
         rules = result.get("data", [])
         for r in rules:
+            limit = parse_gost_limits(limit=r.get("limit", "{}"))
             ctx = PanelContext(
                 endpoint=endpoint, node_id=node_id, token=token, rule_id=r.get("id"), rule_type=r.get("type")
             )
@@ -109,11 +147,13 @@ async def sync_relay_rules(endpoint: str, node_id: int, token: str, gost: str):
             elif ctx.rule_type == consts.RuleType.TUNNEL.value:
                 tasks.append(
                     sync_ingress_rule(
-                        rule=r, gost=gost, service_map=gost_service_map, chain_map=gost_chain_map, ctx=ctx
+                        rule=r, gost=gost, service_map=gost_service_map, chain_map=gost_chain_map, ctx=ctx, limit=limit
                     )
                 )
             elif ctx.rule_type == consts.RuleType.RAW.value:
-                tasks.append(sync_raw_redirect_rule(rule=r, gost=gost, service_map=gost_service_map, ctx=ctx))
+                tasks.append(
+                    sync_raw_redirect_rule(rule=r, gost=gost, service_map=gost_service_map, ctx=ctx, limit=limit)
+                )
             else:
                 logger.warning(f"unsupported rule type of rule-{r.get('id')}: {r.get('type')}")
 
@@ -132,29 +172,38 @@ async def sync_relay_rules(endpoint: str, node_id: int, token: str, gost: str):
         raise TYZApiException(f"sync relay rules error: {msg}")
 
 
-async def sync_ingress_rule(rule: dict, gost: str, service_map: dict, chain_map: dict, ctx: PanelContext) -> bool:
+async def sync_ingress_rule(
+    rule: dict, gost: str, service_map: dict, chain_map: dict, ctx: PanelContext, limit: RelayRuleLimit = None
+) -> bool:
     """
     Sync ingress rule.
     :param rule:
     :param gost: gost endpoint
     :param service_map: gost service map
     :param ctx:
+    :param limit:
     :return:
     """
     service_name = gen_service_name(
         rule_id=rule.get("id"), rule_type=rule.get("type"), node_id=rule.get("ingress_node")
     )
+    await add_or_update_limiters(endpoint=gost, service_name=service_name, limit=limit)
+
     old_service = service_map.get(service_name)
     if old_service:
         old_port = old_service.get("addr", ":").split(":")[1]
         old_targets = collect_key_from_dict_list(_list=old_service.get("forwarder", {}).get("nodes", []), key="addr")
         old_relay_name = old_service.get("handler", {}).get("chain", "")
         old_relay_addr = chain_map.get(old_relay_name, {}).get("hops", [{}])[0].get("nodes", [{}])[0].get("addr")
+        old_speed_limiter = old_service.get("limiter", "")
+        old_conn_limiter = old_service.get("climiter", "")
 
         if (
             old_port == str(rule.get("listen_port"))
             and old_relay_addr == rule.get("tunnel", {}).get("addr", "")
             and old_targets == rule.get("targets").split("\n")
+            and old_speed_limiter == gen_limiter_name(service=service_name, type="speed")
+            and old_conn_limiter == gen_limiter_name(service=service_name, type="conn")
         ):
             logger.info(f"{service_name} already exists")
             return True
@@ -167,6 +216,7 @@ async def sync_ingress_rule(rule: dict, gost: str, service_map: dict, chain_map:
         relay=rule.get("tunnel", {}).get("addr", ""),
         targets=rule.get("targets").split("\n"),
         auth=GOSTAuth(username=rule.get("tunnel", {}).get("username"), password=rule.get("tunnel", {}).get("password")),
+        limit=limit,
     )
     if add_ok:
         logger.info(f"ingress rule {service_name} added success")
@@ -227,7 +277,9 @@ async def sync_egress_rule(rule: dict, gost: str, service_map: dict, ctx: PanelC
         return False
 
 
-async def sync_raw_redirect_rule(rule: dict, gost: str, service_map: dict, ctx: PanelContext) -> bool:
+async def sync_raw_redirect_rule(
+    rule: dict, gost: str, service_map: dict, ctx: PanelContext, limit: RelayRuleLimit = None
+) -> bool:
     """
     Sync raw redirect rule.
     :param rule:
@@ -237,17 +289,30 @@ async def sync_raw_redirect_rule(rule: dict, gost: str, service_map: dict, ctx: 
     :return:
     """
     service_name = gen_service_name(rule.get("id"), rule_type=rule.get("type"), node_id=rule.get("ingress_node"))
+    await add_or_update_limiters(endpoint=gost, service_name=service_name, limit=limit)
+
     old_service = service_map.get(service_name)
     if old_service:
         old_port = old_service.get("addr", ":").split(":")[1]
         old_targets = collect_key_from_dict_list(_list=old_service.get("forwarder", {}).get("nodes", []), key="addr")
-        if old_port == str(rule.get("listen_port")) and old_targets == rule.get("targets").split("\n"):
+        old_speed_limiter = old_service.get("limiter", "")
+        old_conn_limiter = old_service.get("climiter", "")
+        if (
+            old_port == str(rule.get("listen_port"))
+            and old_targets == rule.get("targets").split("\n")
+            and old_speed_limiter == gen_limiter_name(service=service_name, type="speed")
+            and old_conn_limiter == gen_limiter_name(service=service_name, type="conn")
+        ):
             logger.info(f"{service_name} already exists")
             return True
 
     logger.info(f"creating or updating service {service_name}")
     add_ok = await add_raw_redir_service(
-        endpoint=gost, name=service_name, addr=f":{rule.get('listen_port')}", targets=rule.get("targets").split("\n")
+        endpoint=gost,
+        name=service_name,
+        addr=f":{rule.get('listen_port')}",
+        targets=rule.get("targets").split("\n"),
+        limit=limit,
     )
     if add_ok:
         logger.info(f"ingress rule {service_name} added success")

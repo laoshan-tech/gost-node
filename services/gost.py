@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 import httpx
 
 from exceptions.gost import GOSTApiException
-from utils.gost import GOSTAuth
+from utils.gost import GOSTAuth, RelayRuleLimit
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,9 @@ async def add_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> 
         return False
 
 
-async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+async def update_ws_ingress_service(
+    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+) -> bool:
     chain_name = f"{name}-chain"
     data = {
         "addr": addr,
@@ -131,6 +133,12 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets
         },
         "observer": "node-observer",
     }
+    if limit:
+        speed_limiter_name = f"{name}-speed-limiter"
+        conn_limiter_name = f"{name}-conn-limiter"
+        data["limiter"] = speed_limiter_name
+        data["climiter"] = conn_limiter_name
+
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
@@ -139,7 +147,9 @@ async def update_ws_ingress_service(endpoint: str, name: str, addr: str, targets
         return False
 
 
-async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str, targets: List[str], auth: GOSTAuth):
+async def add_ws_ingress_service(
+    endpoint: str, name: str, addr: str, relay: str, targets: List[str], auth: GOSTAuth, limit: RelayRuleLimit = None
+):
     """
 
     :param endpoint: gost endpoint
@@ -148,6 +158,7 @@ async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str
     :param relay: relay address
     :param targets: relay targets
     :param auth:
+    :param limit:
     :return:
     """
     chain_name = f"{name}-chain"
@@ -162,6 +173,13 @@ async def add_ws_ingress_service(endpoint: str, name: str, addr: str, relay: str
         },
         "observer": "node-observer",
     }
+
+    if limit:
+        speed_limiter_name = f"{name}-speed-limiter"
+        conn_limiter_name = f"{name}-conn-limiter"
+        data["limiter"] = speed_limiter_name
+        data["climiter"] = conn_limiter_name
+
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
@@ -205,13 +223,20 @@ async def add_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTA
         return False
 
 
-async def update_raw_redir_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+async def update_raw_redir_service(
+    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+) -> bool:
     data = {
         "addr": addr,
         "handler": {"type": "tcp"},
         "listener": {"type": "tcp"},
         "forwarder": {"nodes": [{"name": f"{name}-node-{index}", "addr": t} for index, t in enumerate(targets)]},
     }
+    if limit:
+        speed_limiter_name = f"{name}-speed-limiter"
+        conn_limiter_name = f"{name}-conn-limiter"
+        data["limiter"] = speed_limiter_name
+        data["climiter"] = conn_limiter_name
     success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
@@ -220,7 +245,9 @@ async def update_raw_redir_service(endpoint: str, name: str, addr: str, targets:
         return False
 
 
-async def add_raw_redir_service(endpoint: str, name: str, addr: str, targets: List[str]) -> bool:
+async def add_raw_redir_service(
+    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+) -> bool:
     data = {
         "name": name,
         "addr": addr,
@@ -228,11 +255,68 @@ async def add_raw_redir_service(endpoint: str, name: str, addr: str, targets: Li
         "listener": {"type": "tcp"},
         "forwarder": {"nodes": [{"name": f"{name}-node-{index}", "addr": t} for index, t in enumerate(targets)]},
     }
+
+    if limit:
+        speed_limiter_name = f"{name}-speed-limiter"
+        conn_limiter_name = f"{name}-conn-limiter"
+        data["limiter"] = speed_limiter_name
+        data["climiter"] = conn_limiter_name
+
     success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_raw_redir_service(endpoint=endpoint, name=name, addr=addr, targets=targets)
+        return await update_raw_redir_service(endpoint=endpoint, name=name, addr=addr, targets=targets, limit=limit)
     else:
         logger.error(f"add raw redirect service error: {msg}")
+        return False
+
+
+async def update_speed_limiter(endpoint: str, name: str, values: List = None) -> bool:
+    data = {"limits": values}
+    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/limiters/{name}", method="put", data=data)
+    if success and msg == "OK":
+        return True
+    else:
+        logger.error(f"update speed limiter error: {msg}")
+        return False
+
+
+async def add_speed_limiter(endpoint: str, name: str, values: List = None) -> bool:
+    if not values:
+        return True
+
+    data = {"name": name, "limits": values}
+    success, msg, result = await gost_req(endpoint=endpoint, url="/config/limiters", method="post", data=data)
+    if success and msg == "OK":
+        return True
+    elif msg == "object duplicated":
+        return await update_speed_limiter(endpoint=endpoint, name=name, values=values)
+    else:
+        logger.error(f"add speed limiter error: {msg}")
+        return False
+
+
+async def update_conn_limiter(endpoint: str, name: str, values: List = None) -> bool:
+    data = {"limits": values}
+    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/climiters/{name}", method="put", data=data)
+    if success and msg == "OK":
+        return True
+    else:
+        logger.error(f"update speed limiter error: {msg}")
+        return False
+
+
+async def add_conn_limiter(endpoint: str, name: str, values: List = None) -> bool:
+    if not values:
+        return True
+
+    data = {"name": name, "limits": values}
+    success, msg, result = await gost_req(endpoint=endpoint, url="/config/climiters", method="post", data=data)
+    if success and msg == "OK":
+        return True
+    elif msg == "object duplicated":
+        return await update_conn_limiter(endpoint=endpoint, name=name, values=values)
+    else:
+        logger.error(f"add speed limiter error: {msg}")
         return False
