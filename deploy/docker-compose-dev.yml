@@ -2,7 +2,8 @@ services:
   prom:
     image: "prom/prometheus"
     restart: "on-failure"
-    network_mode: "bridge"
+    networks:
+      - mon
     user: "root"
     volumes:
       - "./prom/:/etc/prometheus/"
@@ -20,7 +21,8 @@ services:
   grafana:
     image: "grafana/grafana"
     restart: "on-failure"
-    network_mode: "bridge"
+    networks:
+      - mon
     user: "root"
     volumes:
       - "./data/grafana/:/var/lib/grafana/"
@@ -44,3 +46,7 @@ services:
       options:
         max-size: "1m"
         max-file: "3"
+
+networks:
+  mon:
+    driver: "bridge"
