@@ -3,7 +3,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from json import JSONDecodeError
-from typing import List
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -77,3 +77,34 @@ def parse_gost_limits(limit: str) -> RelayRuleLimit:
         rule_limit.conn_limits = [f"$ {conn_limit}"]
 
     return rule_limit
+
+
+def gen_service_name(rule_id: int, rule_type: str, node_id: int) -> str:
+    """
+    Generate service name.
+    :return:
+    """
+    return f"rule-{rule_id}-{rule_type.lower()}-node-{node_id}"
+
+
+def gen_limiter_name(service: str, _type: str) -> str:
+    """
+    Generate limiter name.
+    :param service:
+    :param _type:
+    :return:
+    """
+    return f"{service}-{_type}-limiter"
+
+
+def parse_rule_info_from_service(service: str) -> Tuple[int, str, int]:
+    """
+    Parse rule id, rule type, node id from service name.
+    :param service:
+    :return:
+    """
+    data = service.split("-")
+    rule_id = int(data[1])
+    rule_type = data[2]
+    node_id = int(data[4])
+    return rule_id, rule_type, node_id

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from collections import Counter
 
 from exceptions.tyz import TYZApiException
@@ -10,6 +11,9 @@ from utils.gost import (
     GOSTAuth,
     parse_gost_limits,
     RelayRuleLimit,
+    gen_service_name,
+    gen_limiter_name,
+    parse_rule_info_from_service,
 )
 from .api import TYZApi, GOSTApi, PrometheusApi
 from .gost import (
@@ -25,24 +29,6 @@ from .gost import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def gen_service_name(rule_id: int, rule_type: str, node_id: int) -> str:
-    """
-    Generate service name.
-    :return:
-    """
-    return f"rule-{rule_id}-{rule_type.lower()}-node-{node_id}"
-
-
-def gen_limiter_name(service: str, _type: str) -> str:
-    """
-    Generate limiter name.
-    :param service:
-    :param _type:
-    :return:
-    """
-    return f"{service}-{_type}-limiter"
 
 
 async def add_or_update_limiters(gost_api: GOSTApi, service_name: str, limit: RelayRuleLimit):
@@ -273,8 +259,14 @@ async def report_traffic_by_rules(panel_api: TYZApi, prom_api: PrometheusApi):
     outputs = await t2
 
     result = Counter(inputs) + Counter(outputs)
-    logger.info(result)
-    # await tyz_req(endpoint=endpoint)
+    traffic_data = {"raw": {}, "tunnel": {}, "egress": {}}
+    for service_name in result:
+        rule_id, rule_type, node_id = parse_rule_info_from_service(service=service_name)
+        # Use MB
+        traffic_data[rule_type.lower()][str(rule_id)] = int(result[service_name])
+
+    logger.info(f"report traffic data: {result}")
+    await panel_api.traffic_report(data=traffic_data)
 
 
 async def old_gost_service_cleanup(gost_api: GOSTApi, service_map: dict, chain_map: dict, new_service_names: list):

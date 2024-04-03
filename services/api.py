@@ -59,6 +59,10 @@ class TYZApi(BasicApi):
             url="/api/relay-rule-sync/", method="GET", params={"node_id": self.node_id, "token": self.token}
         )
 
+    async def traffic_report(self, data: dict):
+        post_data = {"node_id": self.node_id, "token": self.token, "data": data}
+        return await self.request(url="/api/relay-rule-traffic/", method="POST", data=post_data)
+
 
 class GOSTApi(BasicApi):
     def __init__(self, endpoint: str):
