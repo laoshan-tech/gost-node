@@ -9,6 +9,7 @@ scrape_configs:
           instance: prometheus
 
   - job_name: gost
+    scrape_interval: 5s
     static_configs:
       - targets: [ '172.17.0.1:19000' ]
         labels:

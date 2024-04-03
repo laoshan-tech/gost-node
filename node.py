@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import logging
 import tomllib
 from contextlib import asynccontextmanager
@@ -43,12 +44,7 @@ app = FastAPI(lifespan=lifespan)
 
 def main():
     p = urlparse(mng_endpoint)
-    uvicorn.run(
-        app,
-        host=p.hostname,
-        port=p.port or 80,
-        log_config=uvicorn_log_cfg,
-    )
+    uvicorn.run(app, host=p.hostname, port=p.port or 80, log_config=uvicorn_log_cfg)
 
 
 if __name__ == "__main__":
