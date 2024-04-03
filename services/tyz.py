@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import math
 from collections import Counter
 
 from exceptions.tyz import TYZApiException
