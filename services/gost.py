@@ -1,99 +1,42 @@
 import logging
-from json import JSONDecodeError
-from typing import List, Tuple, Optional
-from urllib.parse import urljoin
-
-import httpx
+from typing import List
 
 from exceptions.gost import GOSTApiException
+from services.api import GOSTApi, PrometheusApi
 from utils.gost import GOSTAuth, RelayRuleLimit
 
 logger = logging.getLogger(__name__)
 
 
-async def gost_req(endpoint: str, url: str, method: str, data: dict = None) -> Tuple[bool, str, Optional[dict]]:
-    """
-    GOST API request.
-    :param endpoint: gost api addr
-    :param url:
-    :param method: get/post/put/delete/etc
-    :param data: json post data
-    :return:
-    """
-    async with httpx.AsyncClient() as client:
-        try:
-            if method.upper() == "GET":
-                response = await client.get(urljoin(endpoint, url))
-            elif method.upper() in ("POST", "PUT", "DELETE"):
-                response = await client.request(method=method, url=urljoin(endpoint, url), json=data)
-            else:
-                raise GOSTApiException(f"unsupported method: {method}")
-
-            result = response.json()
-        except JSONDecodeError:
-            logger.error(f"json decode error:\n{response.text}")
-            return False, "json decode error", None
-        except Exception as e:
-            logger.error(f"gost req error: {e}")
-            return False, "req error", None
-
-        msg = result.get("msg", "")
-        return response.status_code == 200, msg, result
-
-
-async def prom_req(prom: str, url: str, method: str, params: dict = None) -> Tuple[bool, Optional[dict]]:
-    """
-    Prometheus API request.
-    :param prom: prometheus endpoint
-    :param url:
-    :param method:
-    :param params:
-    :return:
-    """
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.request(method=method.upper(), url=urljoin(prom, url), params=params)
-            result = response.json()
-        except JSONDecodeError:
-            logger.error(f"json decode error:\n{response.text}")
-            return False, None
-        except Exception as e:
-            logger.error(f"prometheus req error: {e}")
-            return False, None
-
-        success = result.get("status", "") == "success"
-        return success, result
-
-
-async def fetch_all_config(endpoint: str) -> dict:
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config", method="get")
+async def fetch_all_config(gost_api: GOSTApi) -> dict:
+    success, msg, result = await gost_api.request(url="/config", method="get")
     if success:
         return result
     else:
         raise GOSTApiException(f"fetch all config error: {msg}")
 
 
-async def del_service(endpoint: str, name: str):
+async def del_service(gost_api: GOSTApi, name: str):
     """
     Delete service.
-    :param endpoint:
+    :param gost_api:
     :param name:
     :return:
     """
-    await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="DELETE")
+    await gost_api.request(url=f"/config/services/{name}", method="DELETE")
 
 
-async def del_chain(endpoint: str, name: str):
+async def del_chain(gost_api: GOSTApi, name: str):
     """
     Delete chain.
-    :param endpoint:
+    :param gost_api:
     :param name:
     :return:
     """
-    await gost_req(endpoint=endpoint, url=f"/config/chains/{name}", method="DELETE")
+    await gost_api.request(url=f"/config/chains/{name}", method="DELETE")
 
 
-async def update_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> bool:
+async def update_ws_chain(gost_api: GOSTApi, name: str, relay: str, auth: GOSTAuth) -> bool:
     data = {
         "hops": [
             {
@@ -109,7 +52,7 @@ async def update_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) 
             }
         ],
     }
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/chains/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/chains/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -117,7 +60,7 @@ async def update_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) 
         return False
 
 
-async def add_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> bool:
+async def add_ws_chain(gost_api: GOSTApi, name: str, relay: str, auth: GOSTAuth) -> bool:
     data = {
         "name": name,
         "hops": [
@@ -134,18 +77,18 @@ async def add_ws_chain(endpoint: str, name: str, relay: str, auth: GOSTAuth) -> 
             }
         ],
     }
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/chains", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/chains", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_ws_chain(endpoint=endpoint, name=name, relay=relay, auth=auth)
+        return await update_ws_chain(gost_api=gost_api, name=name, relay=relay, auth=auth)
     else:
         logger.error(f"add ws chain error: {msg}")
         return False
 
 
 async def update_ws_ingress_service(
-    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+    gost_api: GOSTApi, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
 ) -> bool:
     chain_name = f"{name}-chain"
     data = {
@@ -163,7 +106,7 @@ async def update_ws_ingress_service(
         data["limiter"] = speed_limiter_name
         data["climiter"] = conn_limiter_name
 
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -172,11 +115,17 @@ async def update_ws_ingress_service(
 
 
 async def add_ws_ingress_service(
-    endpoint: str, name: str, addr: str, relay: str, targets: List[str], auth: GOSTAuth, limit: RelayRuleLimit = None
+    gost_api: GOSTApi,
+    name: str,
+    addr: str,
+    relay: str,
+    targets: List[str],
+    auth: GOSTAuth,
+    limit: RelayRuleLimit = None,
 ):
     """
 
-    :param endpoint: gost endpoint
+    :param gost_api: gost endpoint
     :param name: service name
     :param addr: listen address
     :param relay: relay address
@@ -186,7 +135,7 @@ async def add_ws_ingress_service(
     :return:
     """
     chain_name = f"{name}-chain"
-    await add_ws_chain(endpoint=endpoint, name=chain_name, relay=relay, auth=auth)
+    await add_ws_chain(gost_api=gost_api, name=chain_name, relay=relay, auth=auth)
     data = {
         "name": name,
         "addr": addr,
@@ -204,24 +153,24 @@ async def add_ws_ingress_service(
         data["limiter"] = speed_limiter_name
         data["climiter"] = conn_limiter_name
 
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif "object duplicated" == msg:
-        return await update_ws_ingress_service(endpoint=endpoint, name=name, addr=addr, targets=targets)
+        return await update_ws_ingress_service(gost_api=gost_api, name=name, addr=addr, targets=targets)
     else:
         logger.error(f"add ws ingress service error: {msg}")
         return False
 
 
-async def update_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTAuth) -> bool:
+async def update_ws_egress_service(gost_api: GOSTApi, name: str, addr: str, auth: GOSTAuth) -> bool:
     data = {
         "addr": addr,
         "handler": {"type": "relay", "auth": {"username": auth.username, "password": auth.password}},
         "listener": {"type": "ws"},
         "observer": "node-observer",
     }
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -229,7 +178,7 @@ async def update_ws_egress_service(endpoint: str, name: str, addr: str, auth: GO
         return False
 
 
-async def add_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTAuth) -> bool:
+async def add_ws_egress_service(gost_api: GOSTApi, name: str, addr: str, auth: GOSTAuth) -> bool:
     data = {
         "name": name,
         "addr": addr,
@@ -237,18 +186,18 @@ async def add_ws_egress_service(endpoint: str, name: str, addr: str, auth: GOSTA
         "listener": {"type": "ws"},
         "observer": "node-observer",
     }
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif "object duplicated" == msg:
-        return await update_ws_egress_service(endpoint=endpoint, name=name, addr=addr, auth=auth)
+        return await update_ws_egress_service(gost_api=gost_api, name=name, addr=addr, auth=auth)
     else:
         logger.error(f"add ws egress service error: {msg}")
         return False
 
 
 async def update_raw_redir_service(
-    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+    gost_api: GOSTApi, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
 ) -> bool:
     data = {
         "addr": addr,
@@ -261,7 +210,7 @@ async def update_raw_redir_service(
         conn_limiter_name = f"{name}-conn-limiter"
         data["limiter"] = speed_limiter_name
         data["climiter"] = conn_limiter_name
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/services/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/services/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -270,7 +219,7 @@ async def update_raw_redir_service(
 
 
 async def add_raw_redir_service(
-    endpoint: str, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
+    gost_api: GOSTApi, name: str, addr: str, targets: List[str], limit: RelayRuleLimit = None
 ) -> bool:
     data = {
         "name": name,
@@ -286,19 +235,19 @@ async def add_raw_redir_service(
         data["limiter"] = speed_limiter_name
         data["climiter"] = conn_limiter_name
 
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/services", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/services", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_raw_redir_service(endpoint=endpoint, name=name, addr=addr, targets=targets, limit=limit)
+        return await update_raw_redir_service(gost_api=gost_api, name=name, addr=addr, targets=targets, limit=limit)
     else:
         logger.error(f"add raw redirect service error: {msg}")
         return False
 
 
-async def update_speed_limiter(endpoint: str, name: str, values: List = None) -> bool:
+async def update_speed_limiter(gost_api: GOSTApi, name: str, values: List = None) -> bool:
     data = {"limits": values}
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/limiters/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/limiters/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -306,24 +255,24 @@ async def update_speed_limiter(endpoint: str, name: str, values: List = None) ->
         return False
 
 
-async def add_speed_limiter(endpoint: str, name: str, values: List = None) -> bool:
+async def add_speed_limiter(gost_api: GOSTApi, name: str, values: List = None) -> bool:
     if not values:
         return True
 
     data = {"name": name, "limits": values}
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/limiters", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/limiters", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_speed_limiter(endpoint=endpoint, name=name, values=values)
+        return await update_speed_limiter(gost_api=gost_api, name=name, values=values)
     else:
         logger.error(f"add speed limiter error: {msg}")
         return False
 
 
-async def update_conn_limiter(endpoint: str, name: str, values: List = None) -> bool:
+async def update_conn_limiter(gost_api: GOSTApi, name: str, values: List = None) -> bool:
     data = {"limits": values}
-    success, msg, result = await gost_req(endpoint=endpoint, url=f"/config/climiters/{name}", method="put", data=data)
+    success, msg, result = await gost_api.request(url=f"/config/climiters/{name}", method="put", data=data)
     if success and msg == "OK":
         return True
     else:
@@ -331,25 +280,25 @@ async def update_conn_limiter(endpoint: str, name: str, values: List = None) -> 
         return False
 
 
-async def add_conn_limiter(endpoint: str, name: str, values: List = None) -> bool:
+async def add_conn_limiter(gost_api: GOSTApi, name: str, values: List = None) -> bool:
     if not values:
         return True
 
     data = {"name": name, "limits": values}
-    success, msg, result = await gost_req(endpoint=endpoint, url="/config/climiters", method="post", data=data)
+    success, msg, result = await gost_api.request(url="/config/climiters", method="post", data=data)
     if success and msg == "OK":
         return True
     elif msg == "object duplicated":
-        return await update_conn_limiter(endpoint=endpoint, name=name, values=values)
+        return await update_conn_limiter(gost_api=gost_api, name=name, values=values)
     else:
         logger.error(f"add speed limiter error: {msg}")
         return False
 
 
-async def calc_traffic_by_service(prom: str, seconds: int, direction: str) -> dict:
+async def calc_traffic_by_service(prom_api: PrometheusApi, seconds: int, direction: str) -> dict:
     """
     Calculate traffic by service during seconds.
-    :param prom:
+    :param prom_api:
     :param seconds:
     :param direction:
     :return:
@@ -357,7 +306,7 @@ async def calc_traffic_by_service(prom: str, seconds: int, direction: str) -> di
     traffics = {}
     metrics = {"input": "gost_service_transfer_input_bytes_total", "output": "gost_service_transfer_output_bytes_total"}
     pql = f"sum by (service) (increase({metrics[direction]}[{seconds}s]))"
-    success, result = await prom_req(prom=prom, url="/api/v1/query", method="get", params={"query": pql})
+    success, result = await prom_api.request(url="/api/v1/query", method="get", params={"query": pql})
     if not success:
         logger.error(f"prom query error")
         return traffics

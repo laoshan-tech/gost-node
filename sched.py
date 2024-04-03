@@ -4,6 +4,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from services import tyz as tyz_service
+from services.api import TYZApi, GOSTApi, PrometheusApi
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,9 @@ class Scheduler(object):
         self.prom = cfg.get("gost", {}).get("prometheus", "")
         self.node_id = cfg.get("tyz", {}).get("node_id", 0)
         self.token = cfg.get("tyz", {}).get("token", "")
+        self.panel_api = TYZApi(endpoint=self.tyz_endpoint, node_id=self.node_id, token=self.token)
+        self.gost_api = GOSTApi(endpoint=self.gost_endpoint)
+        self.prometheus_api = PrometheusApi(endpoint=self.prom)
 
     def _add_schedules(self):
         # sync rules
@@ -27,10 +31,8 @@ class Scheduler(object):
             misfire_grace_time=60,
             next_run_time=datetime.datetime.now(),
             kwargs={
-                "endpoint": self.tyz_endpoint,
-                "node_id": self.node_id,
-                "token": self.token,
-                "gost": self.gost_endpoint,
+                "panel_api": self.panel_api,
+                "gost_api": self.gost_api,
             },
         )
 
@@ -41,7 +43,7 @@ class Scheduler(object):
             seconds=30,
             misfire_grace_time=60,
             next_run_time=datetime.datetime.now(),
-            kwargs={"endpoint": self.tyz_endpoint, "prom": self.prom},
+            kwargs={"panel_api": self.panel_api, "prom_api": self.prometheus_api},
         )
 
     def run_scheduler(self):
