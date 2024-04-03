@@ -9,20 +9,22 @@ logger = logging.getLogger(__name__)
 
 
 class Scheduler(object):
-    def __init__(self, gost_endpoint: str, mng_endpoint: str, tyz_endpoint: str, node_id: int, token: str) -> None:
+    def __init__(self, cfg: dict) -> None:
         # jobstores = {"default": SQLAlchemyJobStore(url="sqlite:///jobs.sqlite")}
         self.scheduler = AsyncIOScheduler()
-        self.gost_endpoint = gost_endpoint
-        self.panel_endpoint = mng_endpoint
-        self.tyz_endpoint = tyz_endpoint
-        self.node_id = node_id
-        self.token = token
+        self.gost_endpoint = cfg.get("gost", {}).get("endpoint", "")
+        self.tyz_endpoint = cfg.get("tyz", {}).get("endpoint", "")
+        self.prom = cfg.get("gost", {}).get("prometheus", "")
+        self.node_id = cfg.get("tyz", {}).get("node_id", 0)
+        self.token = cfg.get("tyz", {}).get("token", "")
 
     def _add_schedules(self):
+        # sync rules
         self.scheduler.add_job(
             func=tyz_service.sync_relay_rules,
             trigger="interval",
-            seconds=20,
+            seconds=30,
+            misfire_grace_time=60,
             next_run_time=datetime.datetime.now(),
             kwargs={
                 "endpoint": self.tyz_endpoint,
@@ -30,6 +32,16 @@ class Scheduler(object):
                 "token": self.token,
                 "gost": self.gost_endpoint,
             },
+        )
+
+        # report traffic used
+        self.scheduler.add_job(
+            func=tyz_service.report_traffic_by_rules,
+            trigger="interval",
+            seconds=30,
+            misfire_grace_time=60,
+            next_run_time=datetime.datetime.now(),
+            kwargs={"endpoint": self.tyz_endpoint, "prom": self.prom},
         )
 
     def run_scheduler(self):

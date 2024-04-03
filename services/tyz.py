@@ -25,6 +25,7 @@ from .gost import (
     add_speed_limiter,
     del_service,
     del_chain,
+    calc_traffic_by_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,7 @@ async def sync_ingress_rule(
     :param rule:
     :param gost: gost endpoint
     :param service_map: gost service map
+    :param chain_map: gost chain map
     :param ctx:
     :param limit:
     :return:
@@ -328,6 +330,25 @@ async def sync_raw_redirect_rule(
     else:
         logger.error(f"ingress rule {service_name} add error")
         return False
+
+
+async def report_traffic_by_rules(endpoint: str, prom: str):
+    """
+    Report used traffic by rules.
+    :param endpoint: panel endpoint
+    :param prom: prometheus endpoint
+    :return:
+    """
+    t1 = asyncio.create_task(calc_traffic_by_service(prom=prom, seconds=30, direction="input"))
+    t2 = asyncio.create_task(calc_traffic_by_service(prom=prom, seconds=30, direction="output"))
+    inputs = await t1
+    for service, value in inputs.items():
+        logger.info(f"service {service} input -> {value} bytes")
+
+    outputs = await t2
+    for service, value in outputs.items():
+        logger.info(f"service {service} output -> {value} bytes")
+    # await tyz_req(endpoint=endpoint)
 
 
 async def old_gost_service_cleanup(endpoint: str, service_map: dict, chain_map: dict, new_service_names: list):

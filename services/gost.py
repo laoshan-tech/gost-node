@@ -41,6 +41,30 @@ async def gost_req(endpoint: str, url: str, method: str, data: dict = None) -> T
         return response.status_code == 200, msg, result
 
 
+async def prom_req(prom: str, url: str, method: str, params: dict = None) -> Tuple[bool, Optional[dict]]:
+    """
+    Prometheus API request.
+    :param prom: prometheus endpoint
+    :param url:
+    :param method:
+    :param params:
+    :return:
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.request(method=method.upper(), url=urljoin(prom, url), params=params)
+            result = response.json()
+        except JSONDecodeError:
+            logger.error(f"json decode error:\n{response.text}")
+            return False, None
+        except Exception as e:
+            logger.error(f"prometheus req error: {e}")
+            return False, None
+
+        success = result.get("status", "") == "success"
+        return success, result
+
+
 async def fetch_all_config(endpoint: str) -> dict:
     success, msg, result = await gost_req(endpoint=endpoint, url="/config", method="get")
     if success:
@@ -320,3 +344,28 @@ async def add_conn_limiter(endpoint: str, name: str, values: List = None) -> boo
     else:
         logger.error(f"add speed limiter error: {msg}")
         return False
+
+
+async def calc_traffic_by_service(prom: str, seconds: int, direction: str) -> dict:
+    """
+    Calculate traffic by service during seconds.
+    :param prom:
+    :param seconds:
+    :param direction:
+    :return:
+    """
+    traffics = {}
+    metrics = {"input": "gost_service_transfer_input_bytes_total", "output": "gost_service_transfer_output_bytes_total"}
+    pql = f"sum by (service) (increase({metrics[direction]}[{seconds}s]))"
+    success, result = await prom_req(prom=prom, url="/api/v1/query", method="get", params={"query": pql})
+    if not success:
+        logger.error(f"prom query error")
+        return traffics
+
+    data = result.get("data", {}).get("result", [])
+    for d in data:
+        service_name = d.get("metric", {}).get("service", "")
+        value = float(d.get("value", [])[1])
+        traffics[service_name] = value
+
+    return traffics
