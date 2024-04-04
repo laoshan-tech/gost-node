@@ -17,5 +17,6 @@ FROM python:$PYTHON_BASE
 COPY --from=builder /gost-node/.venv/ /gost-node/.venv
 ENV PATH="/gost-node/.venv/bin:$PATH"
 
+WORKDIR /gost-node
 COPY src /gost-node/src
 CMD ["python", "src/node.py"]
