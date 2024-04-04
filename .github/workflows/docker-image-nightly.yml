@@ -40,3 +40,15 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Delete untagged images
+      run: |
+        REPO=${{ github.event.repository.name }}
+        TOKEN=${{ secrets.GITHUB_TOKEN }}
+        TAGS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+               "https://api.github.com/user/packages/container/$REPO/versions?per_page=100" \
+               | jq -r '.[] | select(.metadata.container.tags | length==0) | .id')
+        for TAG in $TAGS; do
+          curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+               "https://api.github.com/user/packages/container/$REPO/versions/$TAG"
+        done
